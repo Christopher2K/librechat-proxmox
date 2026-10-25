@@ -9,7 +9,7 @@ set -euo pipefail
 
 # --- configuration (override via env) -------------------------------------
 CTID="${CTID:-14247}"                              # container ID
-HOSTNAME="${HOSTNAME:-librechat}"                  # CT hostname
+CT_HOSTNAME="${CT_HOSTNAME:-librechat}"            # CT hostname (not HOSTNAME: bash presets that)
 STORAGE="${STORAGE:-local-lvm}"                    # rootfs storage
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"      # where CT templates live
 BRIDGE="${BRIDGE:-vmbr0}"                          # network bridge
@@ -71,9 +71,9 @@ info "Using template: $TEMPLATE_PATH"
 if pct status "$CTID" >/dev/null 2>&1; then
   warn "CT $CTID already exists — skipping creation."
 else
-  info "Creating LXC $CTID ($HOSTNAME)..."
+  info "Creating LXC $CTID ($CT_HOSTNAME)..."
   pct create "$CTID" "$TEMPLATE_PATH" \
-    --hostname "$HOSTNAME" \
+    --hostname "$CT_HOSTNAME" \
     --cores "$CORES" \
     --memory "$RAM" \
     --swap "$SWAP" \
