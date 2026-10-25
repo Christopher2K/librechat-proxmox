@@ -97,7 +97,15 @@ for _ in $(seq 1 30); do
 done
 
 # --- run the installer inside the CT --------------------------------------
+# A fresh Debian template has no curl, so fetch install.sh on the host (which
+# has curl) and push it into the CT rather than curling from inside it.
+info "Fetching installer..."
+TMP_INSTALL="$(mktemp)"
+curl -fsSL "${REPO_RAW}/install.sh" -o "$TMP_INSTALL"
+pct push "$CTID" "$TMP_INSTALL" /tmp/librechat-install.sh
+rm -f "$TMP_INSTALL"
+
 info "Running the LibreChat installer inside the CT (this downloads Docker + images)..."
-pct exec "$CTID" -- bash -c "curl -fsSL '${REPO_RAW}/install.sh' | bash"
+pct exec "$CTID" -- bash /tmp/librechat-install.sh
 
 ok "Done. See the printed URLs for LibreChat (3080) and the Admin Panel (3000)."
