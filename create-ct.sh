@@ -22,9 +22,51 @@ REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/Christopher2K/librechat-
 
 info() { printf '\033[0;34m[INFO]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[0;32m[ OK ]\033[0m %s\n' "$*"; }
+warn() { printf '\033[0;33m[WARN]\033[0m %s\n' "$*"; }
 die()  { printf '\033[0;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "Run as root on the Proxmox host."
+
+# --- interactive prompts (whiptail) ---------------------------------------
+# Ask for each setting when we can talk to the user; otherwise fall back to the
+# env/defaults above. Prompts are skipped when NONINTERACTIVE is set, when
+# stdout is not a TTY (e.g. piped/cron), or when whiptail is unavailable.
+# Set any value ahead of time via env to pre-fill (or bypass) the prompts.
+if [ -z "${NONINTERACTIVE:-}" ] && [ -t 1 ] && command -v whiptail >/dev/null 2>&1; then
+
+  # whiptail draws the widget to stdout and returns the answer on stderr, so
+  # swap the two descriptors when capturing the answer into a variable.
+  prompt_input() {
+    # $1 = title, $2 = prompt text, $3 = current value
+    local out rc
+    out="$(whiptail --title "$1" --inputbox "$2" 0 0 "$3" 3>&1 1>&2 2>&3)"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$out" ]; then printf '%s' "$out"; else printf '%s' "$3"; fi
+  }
+
+  prompt_menu() {
+    # $1 = title, $2 = prompt text, $3 = default tag, then "tag description" pairs
+    local title="$1" text="$2" def="$3" out rc
+    shift 3
+    out="$(whiptail --title "$title" --menu "$text" 0 0 0 --default-item "$def" "$@" 3>&1 1>&2 2>&3)"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$out" ]; then printf '%s' "$out"; else printf '%s' "$def"; fi
+  }
+
+  CTID="$(prompt_input "LibreChat CT — ID" "Container ID (e.g. 100–999999):" "$CTID")"
+  CT_HOSTNAME="$(prompt_input "LibreChat CT — Hostname" "Container hostname:" "$CT_HOSTNAME")"
+  CORES="$(prompt_input "LibreChat CT — CPU" "CPU cores:" "$CORES")"
+  RAM="$(prompt_input "LibreChat CT — Memory" "RAM in MB (6144 ≈ 6 GB):" "$RAM")"
+  SWAP="$(prompt_input "LibreChat CT — Swap" "Swap in MB:" "$SWAP")"
+  DISK="$(prompt_input "LibreChat CT — Disk" "Root disk size in GB:" "$DISK")"
+  STORAGE="$(prompt_input "LibreChat CT — Storage" "Rootfs storage pool (e.g. local-lvm):" "$STORAGE")"
+  BRIDGE="$(prompt_input "LibreChat CT — Network" "Network bridge (e.g. vmbr0):" "$BRIDGE")"
+  DEBIAN="$(prompt_menu "LibreChat CT — Template" "Debian version:" "$DEBIAN" \
+    "13" "Debian 13 (recommended)" \
+    "12" "Debian 12")"
+
+  info "Using CTID=$CTID hostname=$CT_HOSTNAME cores=$CORES RAM=${RAM}MB disk=${DISK}GB storage=$STORAGE bridge=$BRIDGE Debian=$DEBIAN"
+fi
 
 # --- find or download the Debian template ---------------------------------
 pveam update >/dev/null 2>&1 || true

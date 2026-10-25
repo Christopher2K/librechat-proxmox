@@ -34,8 +34,21 @@ ships **without** the admin panel.
 ### Option A — turnkey (Proxmox host)
 
 ```bash
-# on the Proxmox host, edit storage/bridge at the top of the script first
 curl -fsSL https://raw.githubusercontent.com/Christopher2K/librechat-proxmox/main/create-ct.sh | bash
+```
+
+When run from a terminal, the script prompts for each setting — CT ID, hostname,
+CPU cores, RAM, swap, disk size, storage pool, network bridge, and Debian
+version — each pre-filled with a sensible default. Override any of them via
+environment variables, or run fully unattended with `NONINTERACTIVE=1`:
+
+```bash
+# interactive (whiptail prompts)
+curl -fsSL https://raw.githubusercontent.com/Christopher2K/librechat-proxmox/main/create-ct.sh | bash
+
+# unattended, with custom values
+curl -fsSL https://raw.githubusercontent.com/Christopher2K/librechat-proxmox/main/create-ct.sh | \
+  CTID=200 STORAGE=zfs BRIDGE=vmbr1 NONINTERACTIVE=1 bash
 ```
 
 ### Option B — inside an existing Debian LXC/VM
@@ -56,7 +69,7 @@ If you create the LXC manually, set **Options → Features** to enable
 
   ```bash
   sed -i 's/^ALLOW_REGISTRATION=true/ALLOW_REGISTRATION=false/' /opt/librechat/.env
-  cd /opt/librechat && docker compose up -d
+  cd /opt/librechat && docker compose up -d --force-recreate
   ```
 
 ## Update
@@ -77,7 +90,7 @@ Everything lives in `/opt/librechat`:
 After editing `.env`, run:
 
 ```bash
-cd /opt/librechat && docker compose up -d
+cd /opt/librechat && docker compose up -d --force-recreate
 ```
 
 ### Enabling RAG / file uploads embeddings
@@ -93,6 +106,84 @@ RAG_OPENAI_API_KEY=sk-...
 
 Add e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_KEY` to
 `/opt/librechat/.env` (or set them per-user in the UI), then restart.
+
+## Cloudflare Tunnel (HTTPS + domain)
+
+The stack defaults to plain HTTP on a LAN IP. To reach it from the internet with
+TLS and a real domain, front it with a Cloudflare Tunnel (`cloudflared`) and
+point LibreChat at your public URLs.
+
+### 1. Point LibreChat at your domain
+
+Edit `/opt/librechat/.env` (these lines already exist — just change their values):
+
+```
+# The public URL users load (used for links, OAuth callbacks, cookies).
+DOMAIN_CLIENT=https://chat.example.com
+DOMAIN_SERVER=https://chat.example.com
+
+# Secure cookies — now that you're serving HTTPS.
+SESSION_COOKIE_SECURE=true
+
+# The admin panel's public URL.
+ADMIN_PANEL_URL=https://admin.example.com
+ADMIN_PANEL_SESSION_COOKIE_SECURE=true
+
+# Lock signups before exposing anything.
+ALLOW_REGISTRATION=false
+```
+
+`TRUST_PROXY=1` is already set, so LibreChat honours the `X-Forwarded-*`
+headers the tunnel sends. Restart (force-recreate so the new values are picked
+up):
+
+```bash
+cd /opt/librechat && docker compose up -d --force-recreate
+```
+
+### 2. Run a Cloudflare Tunnel
+
+The easiest is a quick tunnel from the LXC itself:
+
+```bash
+cloudflared tunnel --url http://localhost:3080
+```
+
+For two hostnames (chat + admin), use a named tunnel with ingress rules:
+
+```yaml
+# /etc/cloudflared/config.yml
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: chat.example.com
+    service: http://localhost:3080
+  - hostname: admin.example.com
+    service: http://localhost:3000
+  - service: http_status:404
+```
+
+Run `cloudflared` on the same LXC (point the services at `localhost`) or on any
+host that can reach `<CT-IP>:3080` / `<CT-IP>:3000`.
+
+### 3. Protect the admin panel
+
+**Do not expose the admin panel to the internet unprotected** — anyone who
+reaches `admin.example.com` and obtains credentials controls the whole
+instance. Either:
+
+- Put **Cloudflare Access** in front of `admin.example.com` (an email/policy
+  gate that runs before traffic reaches your server), or
+- Keep the admin panel **LAN-only**: only publish `chat.example.com` and leave
+  `:3000` un-tunnelled.
+
+### Cloudflare limits to be aware of
+
+- **Uploads are capped at ~100 MB** through the Cloudflare proxy (free plans).
+  Large file/RAG uploads may fail; route those around the proxy if you need more.
+- **Streaming/SSE responses time out after ~100 s** on the Cloudflare proxy, so
+  very long generations can appear to stall.
 
 ## Files
 
