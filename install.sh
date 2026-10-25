@@ -238,6 +238,23 @@ prepare_dirs() {
   chown -R "${PU}:${PU}" "$INSTALL_DIR"
 }
 
+enable_console_autologin() {
+  # The stock Debian template shows a "debian login:" prompt on the Proxmox web
+  # console with no password set, so it's unusable. Community-script containers
+  # instead auto-login root on the console. Replicate that by overriding the
+  # container getty. Harmless no-op outside an LXC (no container-getty service).
+  local dir="/etc/systemd/system/container-getty@.service.d"
+  mkdir -p "$dir"
+  cat > "$dir/autologin.conf" <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 $TERM
+EOF
+  systemctl daemon-reload
+  systemctl restart 'container-getty@*.service' 2>/dev/null || true
+  ok "Console root auto-login enabled."
+}
+
 start_stack() {
   cd "$INSTALL_DIR"
   info "Pulling images (this can take a few minutes)..."
@@ -264,6 +281,8 @@ do_install() {
   fi
 
   start_stack
+
+  enable_console_autologin
 
   ip=$(detect_ip)
   ok "Completed successfully!"

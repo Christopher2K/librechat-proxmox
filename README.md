@@ -201,3 +201,7 @@ instance. Either:
 - `SESSION_COOKIE_SECURE=false` and `ADMIN_PANEL_SESSION_COOKIE_SECURE=false`
   are set because the default install is plain HTTP. If you front it with HTTPS,
   switch these back to `true`.
+- The container console **auto-logs in as root** (like the community-script CTs)
+  instead of showing a login prompt. Anyone who can open the Proxmox web console
+  for the CT therefore gets a root shell, so keep your Proxmox login secure.
+  You can still use `pct enter <CTID>` from the host shell as an alternative.
