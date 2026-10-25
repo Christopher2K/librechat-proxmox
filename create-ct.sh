@@ -28,20 +28,37 @@ die()  { printf '\033[0;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --- find or download the Debian template ---------------------------------
 pveam update >/dev/null 2>&1 || true
-TEMPLATE_FILE=""
-while read -r name; do
-  case "$name" in
-    debian-${DEBIAN}-standard_*) TEMPLATE_FILE="$name"; break ;;
-  esac
-done < <(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk '{print $1}')
 
+# pveam download needs the EXACT filename (e.g. debian-13-standard_13.1-2_amd64.tar.zst),
+# so resolve it from the appliance index rather than guessing a family name.
+extract_template() {
+  # $1 = Debian major version (13, 12, 11)
+  pveam available 2>/dev/null | grep -oE "debian-${1}-standard[^[:space:]]*\.tar\.(gz|xz|zst)" | head -n1
+}
+
+TEMPLATE_FILE=""
+for ver in "$DEBIAN" 12 11; do
+  TEMPLATE_FILE="$(extract_template "$ver")"
+  if [ -n "$TEMPLATE_FILE" ]; then
+    DEBIAN="$ver"
+    break
+  fi
+done
+
+# Fall back to a template already present on the target storage.
 if [ -z "$TEMPLATE_FILE" ]; then
-  info "Downloading Debian ${DEBIAN} template..."
-  pveam download "$TEMPLATE_STORAGE" "debian-${DEBIAN}-standard" || \
-    die "Could not download template. Check 'pveam available' and your storage."
-  TEMPLATE_FILE="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk -v d="debian-${DEBIAN}-standard" '$0 ~ d {print $1; exit}')"
+  TEMPLATE_FILE="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep -oE "debian-[0-9]+-standard[^[:space:]]*\.tar\.(gz|xz|zst)" | head -n1)"
 fi
-[ -n "$TEMPLATE_FILE" ] || die "No Debian ${DEBIAN} template available in '$TEMPLATE_STORAGE'."
+
+[ -n "$TEMPLATE_FILE" ] || die "No Debian 'standard' template found. Run 'pveam available' to see what is available."
+
+if pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep -qF "$TEMPLATE_FILE"; then
+  info "Template already present: $TEMPLATE_FILE"
+else
+  info "Downloading template: $TEMPLATE_FILE"
+  pveam download "$TEMPLATE_STORAGE" "$TEMPLATE_FILE" || \
+    die "Download failed. Check storage '$TEMPLATE_STORAGE' and 'pveam available'."
+fi
 
 TEMPLATE_PATH="${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE_FILE}"
 info "Using template: $TEMPLATE_PATH"
