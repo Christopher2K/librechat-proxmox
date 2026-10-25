@@ -33,7 +33,11 @@ pveam update >/dev/null 2>&1 || true
 # so resolve it from the appliance index rather than guessing a family name.
 extract_template() {
   # $1 = Debian major version (13, 12, 11)
-  pveam available 2>/dev/null | grep -oE "debian-${1}-standard[^[:space:]]*\.tar\.(gz|xz|zst)" | head -n1
+  # Prefer amd64 (standard Proxmox x86_64); fall back to any architecture.
+  pveam available 2>/dev/null \
+    | grep -om1 -E "debian-${1}-standard[^[:space:]]*amd64\.tar\.(gz|xz|zst)" \
+    || pveam available 2>/dev/null \
+      | grep -om1 -E "debian-${1}-standard[^[:space:]]*\.tar\.(gz|xz|zst)"
 }
 
 TEMPLATE_FILE=""
@@ -47,7 +51,7 @@ done
 
 # Fall back to a template already present on the target storage.
 if [ -z "$TEMPLATE_FILE" ]; then
-  TEMPLATE_FILE="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep -oE "debian-[0-9]+-standard[^[:space:]]*\.tar\.(gz|xz|zst)" | head -n1)"
+  TEMPLATE_FILE="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep -om1 -E "debian-[0-9]+-standard[^[:space:]]*\.tar\.(gz|xz|zst)")"
 fi
 
 [ -n "$TEMPLATE_FILE" ] || die "No Debian 'standard' template found. Run 'pveam available' to see what is available."
